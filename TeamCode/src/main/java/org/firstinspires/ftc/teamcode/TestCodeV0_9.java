@@ -50,8 +50,21 @@ public class TestCodeV0_9 extends LinearOpMode {
     private VisionPortal visionPortal;
     boolean autoAim = false;
     boolean lastA = false;
+
+    // Tuning: angular control
     private static final double CHASSIS_KP = 0.02;
     private static final double SMOOTH_FACTOR = 0.3;
+
+    // Tuning: range control
+    private static final double TARGET_RANGE_M = 1.0;
+    private static final double RANGE_KP = 0.6;
+    private static final double FORWARD_BACK_MAX = 0.35;
+
+    // Search / reacquire
+    private static final double TAG_LOST_TIMEOUT = 0.25;
+    private static final double SEARCH_ROTATION_SPEED = 0.18;
+    private static final double SEARCH_BACKUP_SPEED = 0.18;
+
     Double targetHeading = null;
 
     // --- Conveyor ---
@@ -72,7 +85,7 @@ public class TestCodeV0_9 extends LinearOpMode {
         motorBackLeft.setDirection(DcMotorSimple.Direction.REVERSE);
         motorFrontLeft.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        // --- IMU ---
+        // --- IMU (Control Hub IMU) ---
         IMU imu = hardwareMap.get(IMU.class, "imu");
         imu.initialize(new IMU.Parameters(new RevHubOrientationOnRobot(
                 RevHubOrientationOnRobot.LogoFacingDirection.UP,
@@ -91,7 +104,7 @@ public class TestCodeV0_9 extends LinearOpMode {
         // --- Conveyor ---
         conveyorLeft = hardwareMap.get(CRServo.class, "conveyorLeft");
         conveyorRight = hardwareMap.get(CRServo.class, "conveyorRight");
-        conveyorLeft2 = hardwareMap.get(CRServo.class, "conveyorLeft2"); // ✅ FIXED initialization
+        conveyorLeft2 = hardwareMap.get(CRServo.class, "conveyorLeft2");
 
         conveyorLeft.setDirection(CRServo.Direction.REVERSE);
         conveyorLeft2.setDirection(CRServo.Direction.REVERSE);
@@ -108,10 +121,12 @@ public class TestCodeV0_9 extends LinearOpMode {
         waitForStart();
 
         double smoothCorrection = 0;
+        double lastSeenBearingDeg = 0.0;
+        double lastTagSeenTime = -1000.0;
+        boolean searching = false;
 
         while (opModeIsActive()) {
 
-            // === Field-centric drive ===
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
@@ -124,51 +139,94 @@ public class TestCodeV0_9 extends LinearOpMode {
             // --- AprilTag Detection ---
             List<AprilTagDetection> detections = aprilTag.getDetections();
             boolean tagDetected = !detections.isEmpty();
+            AprilTagPoseFtc lastPose = null;
 
             // === Auto Align Toggle ===
             if (gamepad1.a && !lastA) {
                 autoAim = !autoAim;
-                if (!autoAim) targetHeading = null;
+                if (!autoAim) {
+                    targetHeading = null;
+                    searching = false;
+                } else {
+                    smoothCorrection = 0.0;
+                    lastSeenBearingDeg = 0.0;
+                    lastTagSeenTime = -1000.0;
+                    searching = false;
+                }
             }
             lastA = gamepad1.a;
 
+            // === Auto-align logic ===
             if (autoAim) {
+                rotatedX = 0.0;
+
                 if (tagDetected) {
                     AprilTagDetection tag = detections.get(0);
-                    AprilTagPoseFtc pose = tag.ftcPose;
-                    double desiredHeading = botHeading + Math.toRadians(pose.bearing);
-                    targetHeading = desiredHeading;
-                    telemetry.addData("AutoAlign", "Tracking Tag ID: %d | Bearing: %.2f°", tag.id, pose.bearing);
+                    if (tag.ftcPose != null) {
+                        lastPose = tag.ftcPose;
+                        lastSeenBearingDeg = lastPose.bearing;
+                        lastTagSeenTime = getRuntime();
+                        searching = false;
+
+                        double headingErrorRad = Math.toRadians(lastSeenBearingDeg);
+                        double correction = CHASSIS_KP * headingErrorRad;
+                        smoothCorrection = smoothCorrection * (1 - SMOOTH_FACTOR) + correction * SMOOTH_FACTOR;
+                        rx = smoothCorrection;
+
+                        double range = lastPose.range;
+                        double rangeError = range - TARGET_RANGE_M;
+                        double forwardPower = RANGE_KP * rangeError;
+                        if (forwardPower > FORWARD_BACK_MAX) forwardPower = FORWARD_BACK_MAX;
+                        if (forwardPower < -FORWARD_BACK_MAX) forwardPower = -FORWARD_BACK_MAX;
+                        rotatedY = forwardPower;
+
+                        telemetry.addData("AutoAlign", String.format("Tag ID %d | Bearing: %.2f° | Range: %.2fm", tag.id, lastSeenBearingDeg, range));
+                    } else {
+                        tagDetected = false;
+                    }
                 }
 
-                if (targetHeading != null) {
-                    double headingError = targetHeading - botHeading;
-                    while (headingError > Math.PI) headingError -= 2 * Math.PI;
-                    while (headingError < -Math.PI) headingError += 2 * Math.PI;
+                if (!tagDetected) {
+                    double timeSinceSeen = getRuntime() - lastTagSeenTime;
 
-                    double correction = CHASSIS_KP * headingError;
-                    smoothCorrection = smoothCorrection * (1 - SMOOTH_FACTOR) + correction * SMOOTH_FACTOR;
-                    rx = smoothCorrection;
+                    if (timeSinceSeen <= TAG_LOST_TIMEOUT) {
+                        double headingErrorRad = Math.toRadians(lastSeenBearingDeg);
+                        double correction = CHASSIS_KP * headingErrorRad;
+                        smoothCorrection = smoothCorrection * (1 - SMOOTH_FACTOR) + correction * SMOOTH_FACTOR;
+                        rx = smoothCorrection;
+                        rotatedY = 0.0;
+
+                        telemetry.addData("AutoAlign", String.format("Lost briefly - using last bearing %.2f°", lastSeenBearingDeg));
+                    } else {
+                        searching = true;
+                        double sign = (lastSeenBearingDeg == 0.0) ? 1.0 : Math.signum(lastSeenBearingDeg);
+                        rx = SEARCH_ROTATION_SPEED * sign;
+                        rotatedY = -SEARCH_BACKUP_SPEED;
+                        smoothCorrection = 0.0;
+
+                        telemetry.addData("AutoAlign", String.format("Searching (last %.2f°, %.2fs ago)", lastSeenBearingDeg, timeSinceSeen));
+                    }
                 }
             } else {
                 smoothCorrection = 0;
             }
 
-            // === Conveyor Toggle ===
+            // === Conveyor Control ===
             if (gamepad1.b && !lastB) {
                 conveyorOn = !conveyorOn;
             }
             lastB = gamepad1.b;
 
-            if (conveyorOn) {
-                conveyorLeft.setPower(CONVEYOR_POWER);
-                conveyorRight.setPower(CONVEYOR_POWER);
-                conveyorLeft2.setPower(CONVEYOR_POWER);
-            } else {
-                conveyorLeft.setPower(0);
-                conveyorRight.setPower(0);
-                conveyorLeft2.setPower(0);
+            double conveyorPower = 0.0;
+            if (gamepad1.y) {
+                conveyorPower = -CONVEYOR_POWER;
+            } else if (conveyorOn) {
+                conveyorPower = CONVEYOR_POWER;
             }
+
+            conveyorLeft.setPower(conveyorPower);
+            conveyorRight.setPower(conveyorPower);
+            conveyorLeft2.setPower(conveyorPower);
 
             // === Apply drivetrain power ===
             double fl = rotatedY + rotatedX + rx;
@@ -239,8 +297,12 @@ public class TestCodeV0_9 extends LinearOpMode {
             // === Telemetry ===
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("AprilTag Detected", tagDetected);
+            telemetry.addData("AutoAlign State", searching ? "SEARCHING" : (autoAim ? "ALIGNING" : "OFF"));
+            telemetry.addData("Last Seen Bearing (deg)", String.format("%.2f", lastSeenBearingDeg));
+            telemetry.addData("Time Since Last Seen (s)", String.format("%.2f", getRuntime() - lastTagSeenTime));
             telemetry.addData("Conveyor On", conveyorOn);
-            telemetry.addData("Heading (deg)", Math.toDegrees(botHeading));
+            telemetry.addData("Holding Reverse (Y)", gamepad1.y);
+            telemetry.addData("Control Hub IMU Heading (deg)", Math.toDegrees(botHeading));
             telemetry.addData("Flywheel On", flywheelOn);
             telemetry.addData("Flywheel Ready", flywheelReady);
             telemetry.addData("Intake Power", intakePower);
