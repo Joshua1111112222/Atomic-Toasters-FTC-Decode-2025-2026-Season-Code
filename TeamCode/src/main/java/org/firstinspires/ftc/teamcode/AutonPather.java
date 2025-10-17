@@ -59,7 +59,7 @@ public class AutonPather extends LinearOpMode {
         while (opModeIsActive()) {
             // === Encoder readings ===
             int encoderX = -motorFrontLeft.getCurrentPosition();  // reversed as before
-            int encoderY = -motorFrontRight.getCurrentPosition(); // reversed as before
+            int encoderY = motorFrontRight.getCurrentPosition(); // reversed as before
 
             // === IMU Heading ===
             double headingDeg = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
