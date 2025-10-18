@@ -94,7 +94,6 @@ public class TestCodeV0_9 extends LinearOpMode {
         // --- Intake ---
         intakeMotor = hardwareMap.get(DcMotor.class, "intakeMotor");
         intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        intakeMotor.setDirection(DcMotorSimple.Direction.REVERSE);
 
         // --- Flywheels ---
         flyLeft = hardwareMap.get(DcMotorEx.class, "flyLeft");
