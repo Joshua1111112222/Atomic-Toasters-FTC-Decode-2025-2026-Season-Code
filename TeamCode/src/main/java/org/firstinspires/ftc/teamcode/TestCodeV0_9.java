@@ -51,12 +51,16 @@ public class TestCodeV0_9 extends LinearOpMode {
     boolean autoAim = false;
     boolean lastA = false;
 
+    // Camera toggle
+    private boolean cameraEnabled = true;
+    private boolean lastDpadUp = false;
+
     // Auto-align tuning
     private static final double ROT_KP = 0.015;       // rotation
     private static final double X_KP = 0.1;           // lateral correction
     private static final double ROT_MAX = 0.4;
-    private static final double ROT_DEADZONE = 0.5;   // degrees
-    private static final double X_DEADZONE = 0.02;    // meters
+    private static final double ROT_DEADZONE = 1.0;   // degrees
+    private static final double X_DEADZONE = 0.03;    // meters
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
@@ -116,6 +120,19 @@ public class TestCodeV0_9 extends LinearOpMode {
 
         while (opModeIsActive()) {
 
+            // === CAMERA TOGGLE (DPAD UP) ===
+            if (gamepad1.dpad_up && !lastDpadUp) {
+                cameraEnabled = !cameraEnabled;
+                if (cameraEnabled) {
+                    visionPortal.resumeStreaming();
+                    telemetry.addLine("Camera turned ON");
+                } else {
+                    visionPortal.stopStreaming();
+                    telemetry.addLine("Camera turned OFF");
+                }
+            }
+            lastDpadUp = gamepad1.dpad_up;
+
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
@@ -128,7 +145,6 @@ public class TestCodeV0_9 extends LinearOpMode {
             // --- AprilTag Detection ---
             List<AprilTagDetection> detections = aprilTag.getDetections();
             boolean tagDetected = !detections.isEmpty();
-            AprilTagPoseFtc lastPose = null;
 
             // === Auto Align Toggle ===
             if (gamepad1.a && !lastA) {
@@ -137,45 +153,46 @@ public class TestCodeV0_9 extends LinearOpMode {
             }
             lastA = gamepad1.a;
 
-            // === Auto-align logic (Yaw + lateral correction) ===
-            if (autoAim) {
+            // === Auto-align logic (Bearing + X correction) ===
+            if (autoAim && cameraEnabled) {
                 rotatedX = 0.0;
                 rotatedY = 0.0;
 
                 if (tagDetected) {
                     AprilTagDetection tag = detections.get(0);
                     if (tag.ftcPose != null) {
-                        lastPose = tag.ftcPose;
+                        double yawToFaceTag = tag.ftcPose.bearing; // turn to face tag (deg)
+                        double strafeError = tag.ftcPose.x;         // left/right (m)
 
-                        double yawError = lastPose.yaw; // degrees
-                        double xError = lastPose.x;     // lateral meters
-                        lastSeenYaw = yawError;
+                        lastSeenYaw = yawToFaceTag;
                         lastTagSeenTime = getRuntime();
                         searching = false;
 
-                        // Combine rotation and lateral error
-                        double rotationPower = yawError * ROT_KP + xError * X_KP;
+                        // Rotation control (turn towards tag)
+                        double rotPower = yawToFaceTag * ROT_KP;
+                        rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
 
-                        // Clamp rotation power
-                        rotationPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotationPower));
+                        // Strafe control (sideways center)
+                        double strafePower = -strafeError * X_KP;
 
-                        // Deadzone
-                        if (Math.abs(yawError) < ROT_DEADZONE && Math.abs(xError) < X_DEADZONE) {
-                            rotationPower = 0;
-                        }
+                        // Deadzones
+                        if (Math.abs(yawToFaceTag) < ROT_DEADZONE) rotPower = 0;
+                        if (Math.abs(strafeError) < X_DEADZONE) strafePower = 0;
 
-                        rx = rotationPower;
+                        rx = rotPower;
+                        rotatedX = strafePower;
 
-                        telemetry.addData("AutoAlign", String.format("Yaw: %.2f° | X: %.2f | RotPower: %.2f", yawError, xError, rotationPower));
+                        telemetry.addData("AutoAlign", String.format(
+                                "Bearing: %.2f° | X: %.2f | RotPower: %.2f | Strafe: %.2f",
+                                yawToFaceTag, strafeError, rotPower, strafePower
+                        ));
                     }
                 } else {
                     double timeSinceSeen = getRuntime() - lastTagSeenTime;
-
                     if (timeSinceSeen < 0.5) {
-                        double rotationPower = lastSeenYaw * ROT_KP;
-                        rotationPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotationPower));
-                        if (Math.abs(lastSeenYaw) < ROT_DEADZONE) rotationPower = 0;
-                        rx = rotationPower;
+                        double rotPower = lastSeenYaw * ROT_KP;
+                        rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
+                        rx = rotPower;
                         telemetry.addData("AutoAlign", "Lost briefly - continuing rotation");
                     } else {
                         searching = true;
@@ -202,7 +219,7 @@ public class TestCodeV0_9 extends LinearOpMode {
             conveyorRight.setPower(conveyorPower);
             conveyorLeft2.setPower(conveyorPower);
 
-            // === X button control for intake + conveyors ===
+            // === X button for intake + conveyors ===
             if (gamepad1.x) {
                 conveyorLeft2.setPower(1.0);
                 conveyorRight.setPower(1.0);
@@ -217,7 +234,7 @@ public class TestCodeV0_9 extends LinearOpMode {
                 }
             }
 
-            // === Apply drivetrain power ===
+            // === Drivetrain ===
             double fl = rotatedY + rotatedX + rx;
             double bl = rotatedY - rotatedX + rx;
             double fr = rotatedY - rotatedX - rx;
@@ -287,18 +304,15 @@ public class TestCodeV0_9 extends LinearOpMode {
 
             // === Telemetry ===
             telemetry.addData("AutoAlign Active", autoAim);
+            telemetry.addData("Camera Enabled", cameraEnabled);
+            telemetry.addData("Camera State", visionPortal.getCameraState());
             telemetry.addData("AprilTag Detected", tagDetected);
             telemetry.addData("AutoAlign State", searching ? "SEARCHING" : (autoAim ? "ALIGNING" : "OFF"));
-            telemetry.addData("Last Seen Yaw (deg)", String.format("%.2f", lastSeenYaw));
+            telemetry.addData("Last Seen Bearing (deg)", String.format("%.2f", lastSeenYaw));
             telemetry.addData("Time Since Last Seen (s)", String.format("%.2f", getRuntime() - lastTagSeenTime));
             telemetry.addData("Conveyor On", conveyorOn);
-            telemetry.addData("Holding Reverse (Y)", gamepad1.y);
-            telemetry.addData("Holding X (Conveyor + Intake Boost)", gamepad1.x);
-            telemetry.addData("Control Hub IMU Heading (deg)", Math.toDegrees(botHeading));
             telemetry.addData("Flywheel On", flywheelOn);
             telemetry.addData("Flywheel Ready", flywheelReady);
-            telemetry.addData("Intake Power", intakeMotor.getPower());
-            telemetry.addData("Camera State", visionPortal.getCameraState());
             telemetry.update();
         }
     }
