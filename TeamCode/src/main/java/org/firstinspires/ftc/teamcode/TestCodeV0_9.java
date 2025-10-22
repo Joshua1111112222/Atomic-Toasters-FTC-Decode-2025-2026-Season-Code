@@ -14,7 +14,6 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
-import org.firstinspires.ftc.vision.apriltag.AprilTagPoseFtc;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 
@@ -33,8 +32,10 @@ public class TestCodeV0_9 extends LinearOpMode {
     boolean lastLeftBumper = false;
     boolean lastRightBumper = false;
 
-    // Flywheel PIDF constants
+    // PIDF constants
     private static final double kP = 0.002;
+    private static final double kI = 0.0000009;   // small integral term
+    private static final double kD = 0.0001;      // derivative term for damping
     private static final double kF = 0.0006;
     private static final double ticksPerRev = 28.0;
     private static final double gearRatio = 1.0;
@@ -44,6 +45,12 @@ public class TestCodeV0_9 extends LinearOpMode {
 
     private double targetRPM = 0;
     private double targetVelocity = 0;
+
+    // PID state
+    private double errorSumL = 0;
+    private double errorSumR = 0;
+    private double lastErrorL = 0;
+    private double lastErrorR = 0;
 
     // --- Vision ---
     private AprilTagProcessor aprilTag;
@@ -56,11 +63,11 @@ public class TestCodeV0_9 extends LinearOpMode {
     private boolean lastDpadUp = false;
 
     // Auto-align tuning
-    private static final double ROT_KP = 0.015;       // rotation
-    private static final double X_KP = 0.1;           // lateral correction
+    private static final double ROT_KP = 0.015;
+    private static final double X_KP = 0.1;
     private static final double ROT_MAX = 0.4;
-    private static final double ROT_DEADZONE = 1.0;   // degrees
-    private static final double X_DEADZONE = 0.03;    // meters
+    private static final double ROT_DEADZONE = 1.0;
+    private static final double X_DEADZONE = 0.03;
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
@@ -117,129 +124,100 @@ public class TestCodeV0_9 extends LinearOpMode {
         double lastSeenYaw = 0.0;
         double lastTagSeenTime = -1000.0;
         boolean searching = false;
+        double lastTime = getRuntime();
 
         while (opModeIsActive()) {
+            double currentTime = getRuntime();
+            double dt = currentTime - lastTime;
+            lastTime = currentTime;
 
             // === CAMERA TOGGLE (DPAD UP) ===
-            if (gamepad1.dpad_up && !lastDpadUp) {
+            boolean dpadUp = gamepad1.dpad_up || gamepad2.dpad_up;
+            if (dpadUp && !lastDpadUp) {
                 cameraEnabled = !cameraEnabled;
-                if (cameraEnabled) {
-                    visionPortal.resumeStreaming();
-                    telemetry.addLine("Camera turned ON");
-                } else {
-                    visionPortal.stopStreaming();
-                    telemetry.addLine("Camera turned OFF");
-                }
+                if (cameraEnabled) visionPortal.resumeStreaming();
+                else visionPortal.stopStreaming();
             }
-            lastDpadUp = gamepad1.dpad_up;
+            lastDpadUp = dpadUp;
 
+            // === DRIVE ===
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
 
             double botHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
-
             double rotatedX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
             double rotatedY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
 
-            // --- AprilTag Detection ---
+            // === APRILTAG AUTO ALIGN ===
             List<AprilTagDetection> detections = aprilTag.getDetections();
             boolean tagDetected = !detections.isEmpty();
 
-            // === Auto Align Toggle ===
-            if (gamepad1.a && !lastA) {
+            boolean aPressed = gamepad1.a || gamepad2.a;
+            if (aPressed && !lastA) {
                 autoAim = !autoAim;
                 if (!autoAim) searching = false;
             }
-            lastA = gamepad1.a;
+            lastA = aPressed;
 
-            // === Auto-align logic (Bearing + X correction) ===
             if (autoAim && cameraEnabled) {
                 rotatedX = 0.0;
                 rotatedY = 0.0;
-
                 if (tagDetected) {
                     AprilTagDetection tag = detections.get(0);
                     if (tag.ftcPose != null) {
-                        double yawToFaceTag = tag.ftcPose.bearing; // turn to face tag (deg)
-                        double strafeError = tag.ftcPose.x;         // left/right (m)
-
+                        double yawToFaceTag = tag.ftcPose.bearing;
+                        double strafeError = tag.ftcPose.x;
                         lastSeenYaw = yawToFaceTag;
                         lastTagSeenTime = getRuntime();
                         searching = false;
-
-                        // Rotation control (turn towards tag)
                         double rotPower = yawToFaceTag * ROT_KP;
                         rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
-
-                        // Strafe control (sideways center)
                         double strafePower = -strafeError * X_KP;
-
-                        // Deadzones
                         if (Math.abs(yawToFaceTag) < ROT_DEADZONE) rotPower = 0;
                         if (Math.abs(strafeError) < X_DEADZONE) strafePower = 0;
-
                         rx = rotPower;
                         rotatedX = strafePower;
-
-                        telemetry.addData("AutoAlign", String.format(
-                                "Bearing: %.2f° | X: %.2f | RotPower: %.2f | Strafe: %.2f",
-                                yawToFaceTag, strafeError, rotPower, strafePower
-                        ));
-                    }
-                } else {
-                    double timeSinceSeen = getRuntime() - lastTagSeenTime;
-                    if (timeSinceSeen < 0.5) {
-                        double rotPower = lastSeenYaw * ROT_KP;
-                        rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
-                        rx = rotPower;
-                        telemetry.addData("AutoAlign", "Lost briefly - continuing rotation");
-                    } else {
-                        searching = true;
-                        rx = 0.0;
-                        telemetry.addData("AutoAlign", "No tag - stopped");
                     }
                 }
             }
 
-            // === Conveyor Control ===
-            if (gamepad1.b && !lastB) {
-                conveyorOn = !conveyorOn;
-            }
-            lastB = gamepad1.b;
+            // === CONVEYOR CONTROL ===
+            boolean bPressed = gamepad1.b || gamepad2.b;
+            if (bPressed && !lastB) conveyorOn = !conveyorOn;
+            lastB = bPressed;
 
             double conveyorPower = 0.0;
-            if (gamepad1.y) {
-                conveyorPower = -CONVEYOR_POWER;
-            } else if (conveyorOn) {
-                conveyorPower = CONVEYOR_POWER;
-            }
+            boolean yPressed = gamepad1.y || gamepad2.y;
+            if (yPressed) conveyorPower = -CONVEYOR_POWER;
+            else if (conveyorOn) conveyorPower = CONVEYOR_POWER;
 
             conveyorLeft.setPower(conveyorPower);
             conveyorRight.setPower(conveyorPower);
             conveyorLeft2.setPower(conveyorPower);
 
-            // === X button for intake + conveyors ===
-            if (gamepad1.x) {
+            // === X BUTTON: INTAKE + CONVEYOR ===
+            boolean xPressed = gamepad1.x || gamepad2.x;
+            if (xPressed) {
                 conveyorLeft2.setPower(1.0);
                 conveyorRight.setPower(1.0);
                 intakeMotor.setPower(1.0);
-            } else if (!gamepad1.x) {
-                if (!conveyorOn && !gamepad1.y) {
+            } else if (!xPressed) {
+                if (!conveyorOn && !yPressed) {
                     conveyorLeft2.setPower(0);
                     conveyorRight.setPower(0);
                 }
-                if (gamepad1.right_trigger < 0.2 && gamepad1.left_trigger < 0.2) {
+                if (gamepad1.right_trigger < 0.2 && gamepad1.left_trigger < 0.2
+                        && gamepad2.right_trigger < 0.2 && gamepad2.left_trigger < 0.2) {
                     intakeMotor.setPower(0);
                 }
             }
 
-            // === Drivetrain ===
+            // === DRIVETRAIN ===
             double fl = rotatedY + rotatedX + rx;
             double bl = rotatedY - rotatedX + rx;
             double fr = rotatedY - rotatedX - rx;
             double br = rotatedY + rotatedX - rx;
-
             double max = Math.max(1.0, Math.max(Math.abs(fl),
                     Math.max(Math.abs(bl), Math.max(Math.abs(fr), Math.abs(br)))));
             motorFrontLeft.setPower(fl / max);
@@ -247,37 +225,29 @@ public class TestCodeV0_9 extends LinearOpMode {
             motorFrontRight.setPower(fr / max);
             motorBackRight.setPower(br / max);
 
-            // === Intake Control ===
+            // === INTAKE CONTROL ===
             double intakePower = 0.0;
-            if (gamepad1.right_trigger > 0.2) {
-                intakePower = 1.0;
-            } else if (gamepad1.left_trigger > 0.2) {
-                intakePower = -1.0;
+            double rightTrigger = Math.max(gamepad1.right_trigger, gamepad2.right_trigger);
+            double leftTrigger = Math.max(gamepad1.left_trigger, gamepad2.left_trigger);
+            if (rightTrigger > 0.2) intakePower = 1.0;
+            else if (leftTrigger > 0.2) intakePower = -1.0;
+            if (!xPressed) intakeMotor.setPower(intakePower);
+
+            // === FLYWHEEL CONTROL ===
+            boolean leftBumper = gamepad1.left_bumper || gamepad2.left_bumper;
+            boolean rightBumper = gamepad1.right_bumper || gamepad2.right_bumper;
+
+            if (leftBumper && !lastLeftBumper) {
+                targetRPM = (flywheelOn && targetRPM == closeRPM) ? 0 : closeRPM;
+                flywheelOn = targetRPM > 0;
             }
-            if (!gamepad1.x) {
-                intakeMotor.setPower(intakePower);
+            if (rightBumper && !lastRightBumper) {
+                targetRPM = (flywheelOn && targetRPM == farRPM) ? 0 : farRPM;
+                flywheelOn = targetRPM > 0;
             }
 
-            // === Flywheel Control ===
-            if (gamepad1.left_bumper && !lastLeftBumper) {
-                if (flywheelOn && targetRPM == closeRPM) {
-                    flywheelOn = false;
-                } else {
-                    targetRPM = closeRPM;
-                    flywheelOn = true;
-                }
-            }
-            if (gamepad1.right_bumper && !lastRightBumper) {
-                if (flywheelOn && targetRPM == farRPM) {
-                    flywheelOn = false;
-                } else {
-                    targetRPM = farRPM;
-                    flywheelOn = true;
-                }
-            }
-
-            lastLeftBumper = gamepad1.left_bumper;
-            lastRightBumper = gamepad1.right_bumper;
+            lastLeftBumper = leftBumper;
+            lastRightBumper = rightBumper;
 
             if (flywheelOn) {
                 targetVelocity = (targetRPM / 60.0) * ticksPerRev * gearRatio;
@@ -285,31 +255,46 @@ public class TestCodeV0_9 extends LinearOpMode {
                 double velR = flyRight.getVelocity();
                 double rpmL = (velL * 60.0) / (ticksPerRev * gearRatio);
                 double rpmR = (velR * 60.0) / (ticksPerRev * gearRatio);
+
                 double errorL = targetVelocity - velL;
                 double errorR = targetVelocity - velR;
-                double powerL = (kP * errorL) + (kF * targetVelocity);
-                double powerR = (kP * errorR) + (kF * targetVelocity);
+
+                // PID terms
+                errorSumL += errorL * dt;
+                errorSumR += errorR * dt;
+                double derivativeL = (errorL - lastErrorL) / dt;
+                double derivativeR = (errorR - lastErrorR) / dt;
+                lastErrorL = errorL;
+                lastErrorR = errorR;
+
+                double powerL = (kP * errorL) + (kI * errorSumL) + (kD * derivativeL) + (kF * targetVelocity);
+                double powerR = (kP * errorR) + (kI * errorSumR) + (kD * derivativeR) + (kF * targetVelocity);
+
                 flyLeft.setPower(powerL);
                 flyRight.setPower(powerR);
+
                 flywheelReady = (Math.abs(rpmL - targetRPM) < tolerance &&
                         Math.abs(rpmR - targetRPM) < tolerance);
+
                 telemetry.addData("Flywheel Mode", targetRPM == closeRPM ? "CLOSE (2500)" : "FAR (2700)");
-                telemetry.addData("Flywheel L RPM", rpmL);
-                telemetry.addData("Flywheel R RPM", rpmR);
+                telemetry.addData("L RPM", rpmL);
+                telemetry.addData("R RPM", rpmR);
+                telemetry.addData("Target RPM", targetRPM);
+                telemetry.addData("Power L", powerL);
+                telemetry.addData("Power R", powerR);
             } else {
                 flyLeft.setPower(0);
                 flyRight.setPower(0);
                 flywheelReady = false;
+                errorSumL = 0;
+                errorSumR = 0;
+                lastErrorL = 0;
+                lastErrorR = 0;
             }
 
-            // === Telemetry ===
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
-            telemetry.addData("Camera State", visionPortal.getCameraState());
             telemetry.addData("AprilTag Detected", tagDetected);
-            telemetry.addData("AutoAlign State", searching ? "SEARCHING" : (autoAim ? "ALIGNING" : "OFF"));
-            telemetry.addData("Last Seen Bearing (deg)", String.format("%.2f", lastSeenYaw));
-            telemetry.addData("Time Since Last Seen (s)", String.format("%.2f", getRuntime() - lastTagSeenTime));
             telemetry.addData("Conveyor On", conveyorOn);
             telemetry.addData("Flywheel On", flywheelOn);
             telemetry.addData("Flywheel Ready", flywheelReady);

@@ -20,6 +20,9 @@ public class AutonV0_1 extends LinearOpMode {
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
     DcMotor intakeMotor;
 
+    // --- Drive Motors ---
+    DcMotor motorFrontLeft, motorFrontRight, motorBackLeft, motorBackRight;
+
     // --- Constants ---
     private static final double TARGET_RPM = 2500;
     private static final double RPM_TOLERANCE = 200;        // ±200 RPM window
@@ -49,6 +52,16 @@ public class AutonV0_1 extends LinearOpMode {
 
         intakeMotor = hardwareMap.get(DcMotor.class, "intakeMotor");
         intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intakeMotor.setDirection(DcMotor.Direction.REVERSE);
+
+        // --- Drive Motors (added for small movement) ---
+        motorFrontLeft = hardwareMap.get(DcMotor.class, "motorFrontLeft");
+        motorFrontRight = hardwareMap.get(DcMotor.class, "motorFrontRight");
+        motorBackLeft = hardwareMap.get(DcMotor.class, "motorBackLeft");
+        motorBackRight = hardwareMap.get(DcMotor.class, "motorBackRight");
+
+        motorFrontLeft.setDirection(DcMotor.Direction.REVERSE);
+        motorBackLeft.setDirection(DcMotor.Direction.REVERSE);
 
         telemetry.addLine("Initialized. Ready to run Auto Shooting.");
         telemetry.update();
@@ -78,7 +91,6 @@ public class AutonV0_1 extends LinearOpMode {
 
             // --- Shooting logic ---
             if (!feeding && Math.abs(avgRPM - TARGET_RPM) <= RPM_TOLERANCE) {
-                // Up to speed → start feeding
                 feeding = true;
                 conveyorLeft.setPower(CONVEYOR_POWER);
                 conveyorRight.setPower(CONVEYOR_POWER);
@@ -86,9 +98,7 @@ public class AutonV0_1 extends LinearOpMode {
                 intakeMotor.setPower(INTAKE_POWER);
                 shotDetected = false;
             }
-
             else if (feeding && avgRPM < (TARGET_RPM - RPM_DROP_THRESHOLD)) {
-                // RPM dropped → a shot likely fired
                 feeding = false;
                 shotDetected = true;
                 conveyorLeft.setPower(0);
@@ -119,6 +129,23 @@ public class AutonV0_1 extends LinearOpMode {
         intakeMotor.setPower(0);
 
         telemetry.addLine("✅ Finished 3 shots!");
+        telemetry.update();
+        sleep(500);
+
+        // --- Drive forward for 500 ms ---
+        motorFrontLeft.setPower(0.5);
+        motorFrontRight.setPower(0.5);
+        motorBackLeft.setPower(0.5);
+        motorBackRight.setPower(0.5);
+
+        sleep(500); // move forward for 0.5 seconds
+
+        motorFrontLeft.setPower(0);
+        motorFrontRight.setPower(0);
+        motorBackLeft.setPower(0);
+        motorBackRight.setPower(0);
+
+        telemetry.addLine("✅ Finished movement!");
         telemetry.update();
         sleep(2000);
     }
