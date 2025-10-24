@@ -1,3 +1,11 @@
+## Licensing Notice
+
+This repository contains source code governed by multiple licenses.
+
+- Files originating from the official FIRST Tech Challenge SDK are licensed under the "FIRST Software License Agreement." (See LICENSE)
+
+- All code written by Team #21518 The Atomic Toasters is licensed under the "No Copy, No Modify License." (See LICENSE-TeamAtomicToasters)
+
 ## NOTICE
 
 This repository contains the public FTC SDK for the DECODE (2025-2026) competition season.
