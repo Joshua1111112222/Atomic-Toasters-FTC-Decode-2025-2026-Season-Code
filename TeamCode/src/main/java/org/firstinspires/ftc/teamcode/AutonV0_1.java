@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2025 Team 21518 - The Atomic Toasters
+ * Licensed under the No Copy, No Modify License (see LICENSE-TeamAtomicToasters)
+ * You MAY NOT copy, modify, or redistribute this file without permission.
+ */
+
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
