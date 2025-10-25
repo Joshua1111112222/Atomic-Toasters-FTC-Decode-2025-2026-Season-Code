@@ -1,27 +1,71 @@
-Copyright (c) 2025, Joshua The. All rights reserved.
+Team Atomic Toasters Proprietary License
+Copyright (c) 2025 Team Atomic Toasters FTC #21518
+All Rights Reserved.
 
-Licensed for use exclusively by currently registered members and mentors of the
-The Atomic Toasters (FTC Team 21518) robotics team for the sole purpose of
-developing, operating, and maintaining the team's official robot for the current
-FIRST Tech Challenge season.
+1. DEFINITIONS
+"Software" refers to all original code, files, scripts, designs, and logic
+authored by Team Atomic Toasters FTC #21518 contained in this repository.
 
-Permitted Use:
-- Viewing and running this software on the official team robot.
-- Proposing changes through the designated maintainer(s) for potential inclusion.
+2. AUTHORIZED USE
+Permission is granted to VIEW and STUDY this Software for personal,
+educational, and reference purposes ONLY.
 
-Prohibited Use:
-- Copying, distributing, or publishing this software outside the team.
-- Modifying this software without written permission from the copyright holder.
-- Using this software for personal projects, other teams, or future seasons.
-- Storing, copying, or maintaining this code on personal repositories or devices.
-- Claiming authorship or ownership of this software.
-- Forking or rehosting this code without permission.
-- Removing or altering copyright notices.
-- Creating derivative works, modified copies, or altered versions of this software
-  without written permission from the copyright holder.
+3. RESTRICTIONS
+The following activities are STRICTLY PROHIBITED without prior written
+permission from Team Atomic Toasters FTC #21518:
 
-Upon leaving the team, individuals must delete all copies of this software from
-their devices, accounts, and repositories, and may not continue to use, modify,
-or distribute it.
+- Copying, redistributing, publishing, or hosting the Software or any portion.
+- Forking, cloning, or creating derivative works based on the Software.
+- Modifying, adapting, or reverse engineering the Software for use in any
+competition, academic, commercial, or training context.
+- Using the Software, concepts, algorithms, or architecture to gain competitive
+advantage in FTC or similar competitions.
+- Using this Software in any project that competes against the authors in FTC.
 
-All rights not expressly granted are reserved.
+4. COMPETITION RESTRICTIONS
+Use of this Software (including derivative logic, control strategies, or
+algorithms) in FIRST Tech Challenge competition robots, subsystems, or
+software operated by any team other than Team 21518 is prohibited.
+
+5. NO DISTRIBUTION
+You may not share, upload, host, transmit, mirror, or otherwise distribute
+this Software or any subset of it.
+
+6. REFERENCE-ONLY
+You may not copy structural elements, patterns, or organization of the code
+directly into another repository or competition project.
+
+7. DERIVATIVE WORKS
+Any unauthorized derivative work based on this Software becomes the property
+of Team Atomic Toasters FTC #21518.
+
+8. TERMINATION
+Any violation of this license terminates all permission granted herein
+immediately and permanently.
+
+Upon termination, you must:
+- Cease all usage,
+- Delete all copies,
+- Remove derivative logic from any active project.
+
+9. DMCA & ENFORCEMENT
+Unauthorized use may result in:
+- DMCA takedown notices,
+- Takedown of GitHub repositories,
+- Administrative reporting to FIRST,
+- Legal action where applicable.
+
+10. NO WARRANTY
+This Software is provided “AS IS” with no warranty of any kind, expressed or
+implied. Use is at your own risk.
+
+11. RESERVATION OF RIGHTS
+Team Atomic Toasters FTC #21518 reserves all intellectual property rights to
+this Software in all jurisdictions.
+
+12. CONTACT
+For licensing inquiries or permission requests, contact:
+Team Atomic Toasters FTC #21518
+
+———————————————
+End of License
