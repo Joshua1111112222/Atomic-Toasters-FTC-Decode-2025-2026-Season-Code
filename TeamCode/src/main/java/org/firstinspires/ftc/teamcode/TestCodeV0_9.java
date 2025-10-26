@@ -190,7 +190,8 @@ public class TestCodeV0_9 extends LinearOpMode {
 
             // === CONVEYOR CONTROL ===
             boolean bPressed = gamepad1.b || gamepad2.b;
-            if (bPressed && !lastB) conveyorOn = !conveyorOn;
+            // Changed to hold behavior: conveyor runs while B is held.
+            conveyorOn = bPressed;
             lastB = bPressed;
 
             double conveyorPower = 0.0;
