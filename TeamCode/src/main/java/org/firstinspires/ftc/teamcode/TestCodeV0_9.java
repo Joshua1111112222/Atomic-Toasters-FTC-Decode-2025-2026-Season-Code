@@ -190,7 +190,6 @@ public class TestCodeV0_9 extends LinearOpMode {
 
             // === CONVEYOR CONTROL ===
             boolean bPressed = gamepad1.b || gamepad2.b;
-            // Changed to hold behavior: conveyor runs while B is held.
             conveyorOn = bPressed;
             lastB = bPressed;
 
@@ -305,6 +304,11 @@ public class TestCodeV0_9 extends LinearOpMode {
             telemetry.addData("Conveyor On", conveyorOn);
             telemetry.addData("Flywheel On", flywheelOn);
             telemetry.addData("Flywheel Ready", flywheelReady);
+
+            // ✅ NEW: Display robot heading from IMU
+            double botHeadingDeg = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+            telemetry.addData("Robot Heading (deg)", botHeadingDeg);
+
             telemetry.update();
         }
     }
