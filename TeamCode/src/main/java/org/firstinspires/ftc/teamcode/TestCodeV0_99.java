@@ -33,14 +33,14 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // PIDF constants
     private static final double kP = 0.002;
-    private static final double kI = 0.0000009;   // small integral term
-    private static final double kD = 0.0001;      // derivative term for damping
+    private static final double kI = 0.0000009;
+    private static final double kD = 0.0001;
     private static final double kF = 0.0006;
     private static final double ticksPerRev = 28.0;
     private static final double gearRatio = 1.0;
     private static final double closeRPM = 2500;
     private static final double farRPM = 2700;
-    private static final double tolerance = 250; // ±250 RPM for "ready"
+    private static final double tolerance = 250;
 
     private double targetRPM = 0;
     private double targetVelocity = 0;
@@ -70,8 +70,6 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
-    boolean conveyorOn = false;
-    boolean lastB = false;
     private static final double CONVEYOR_POWER = 1.0;
 
     @Override
@@ -136,12 +134,19 @@ public class TestCodeV0_99 extends LinearOpMode {
             }
             lastDpadUp = dpadUp;
 
+            // === IMU RESET (DPAD DOWN) ===
+            boolean dpadDown = gamepad1.dpad_down || gamepad2.dpad_down;
+            if (dpadDown) {
+                imu.resetYaw();
+            }
+
             // === DRIVE ===
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
 
             double botHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
+            double botHeadingDeg = Math.toDegrees(botHeading);
             double rotatedX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
             double rotatedY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
 
@@ -169,15 +174,14 @@ public class TestCodeV0_99 extends LinearOpMode {
                 }
             }
 
-            // === CONVEYOR CONTROL ===
+            // === CONVEYOR CONTROL (B HOLD) ===
             boolean bPressed = gamepad1.b || gamepad2.b;
-            if (bPressed && !lastB) conveyorOn = !conveyorOn;
-            lastB = bPressed;
-
             double conveyorPower = 0.0;
+            if (bPressed) conveyorPower = CONVEYOR_POWER;
+
+            // === Y BUTTON: REVERSE CONVEYOR ===
             boolean yPressed = gamepad1.y || gamepad2.y;
             if (yPressed) conveyorPower = -CONVEYOR_POWER;
-            else if (conveyorOn) conveyorPower = CONVEYOR_POWER;
 
             conveyorLeft.setPower(conveyorPower);
             conveyorRight.setPower(conveyorPower);
@@ -190,7 +194,7 @@ public class TestCodeV0_99 extends LinearOpMode {
                 conveyorRight.setPower(1.0);
                 intakeMotor.setPower(1.0);
             } else {
-                if (!conveyorOn && !yPressed) {
+                if (!bPressed && !yPressed) {
                     conveyorLeft2.setPower(0);
                     conveyorRight.setPower(0);
                 }
@@ -300,10 +304,12 @@ public class TestCodeV0_99 extends LinearOpMode {
                 telemetry.addData("Status", "🔴 OFF");
             }
 
+            // === GENERAL TELEMETRY ===
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
             telemetry.addData("AprilTag Detected", tagDetected);
-            telemetry.addData("Conveyor On", conveyorOn);
+            telemetry.addData("Conveyor Power (B/Y/X)", conveyorPower);
+            telemetry.addData("Robot Heading (deg)", botHeadingDeg);
             telemetry.update();
         }
     }
