@@ -33,14 +33,14 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // PIDF constants
     private static final double kP = 0.002;
-    private static final double kI = 0.0000009;
-    private static final double kD = 0.0001;
+    private static final double kI = 0.0000009;   // small integral term
+    private static final double kD = 0.0001;      // derivative term for damping
     private static final double kF = 0.0006;
     private static final double ticksPerRev = 28.0;
     private static final double gearRatio = 1.0;
-    private static final double closeRPM = 2500;
-    private static final double farRPM = 2700;
-    private static final double tolerance = 250;
+    private static final double closeRPM = 2300;
+    private static final double farRPM = 2500;
+    private static final double tolerance = 250; // ±250 RPM for "ready"
 
     private double targetRPM = 0;
     private double targetVelocity = 0;
@@ -59,7 +59,8 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // Camera toggle
     private boolean cameraEnabled = true;
-    private boolean lastDpadUp = false;
+    boolean lastDpadUp = false;
+    boolean lastDpadDown = false;
 
     // Auto-align tuning
     private static final double ROT_KP = 0.015;
@@ -70,7 +71,11 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
+    boolean conveyorOn = false;
     private static final double CONVEYOR_POWER = 1.0;
+
+    // IMU reset offset
+    double imuOffset = 0;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -136,17 +141,19 @@ public class TestCodeV0_99 extends LinearOpMode {
 
             // === IMU RESET (DPAD DOWN) ===
             boolean dpadDown = gamepad1.dpad_down || gamepad2.dpad_down;
-            if (dpadDown) {
-                imu.resetYaw();
+            if (dpadDown && !lastDpadDown) {
+                imuOffset = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
             }
+            lastDpadDown = dpadDown;
 
             // === DRIVE ===
             double y = -gamepad1.left_stick_y;
             double x = gamepad1.left_stick_x;
             double rx = gamepad1.right_stick_x;
 
-            double botHeading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
-            double botHeadingDeg = Math.toDegrees(botHeading);
+            double botHeadingDeg = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES) - imuOffset;
+            double botHeading = Math.toRadians(botHeadingDeg);
+
             double rotatedX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
             double rotatedY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
 
@@ -174,14 +181,14 @@ public class TestCodeV0_99 extends LinearOpMode {
                 }
             }
 
-            // === CONVEYOR CONTROL (B HOLD) ===
+            // === CONVEYOR CONTROL === (Hold to run)
             boolean bPressed = gamepad1.b || gamepad2.b;
-            double conveyorPower = 0.0;
-            if (bPressed) conveyorPower = CONVEYOR_POWER;
+            conveyorOn = bPressed;
 
-            // === Y BUTTON: REVERSE CONVEYOR ===
+            double conveyorPower = 0.0;
             boolean yPressed = gamepad1.y || gamepad2.y;
             if (yPressed) conveyorPower = -CONVEYOR_POWER;
+            else if (conveyorOn) conveyorPower = CONVEYOR_POWER;
 
             conveyorLeft.setPower(conveyorPower);
             conveyorRight.setPower(conveyorPower);
@@ -194,7 +201,7 @@ public class TestCodeV0_99 extends LinearOpMode {
                 conveyorRight.setPower(1.0);
                 intakeMotor.setPower(1.0);
             } else {
-                if (!bPressed && !yPressed) {
+                if (!conveyorOn && !yPressed) {
                     conveyorLeft2.setPower(0);
                     conveyorRight.setPower(0);
                 }
@@ -250,7 +257,6 @@ public class TestCodeV0_99 extends LinearOpMode {
                 double errorL = targetVelocity - velL;
                 double errorR = targetVelocity - velR;
 
-                // PID terms
                 errorSumL += errorL * dt;
                 errorSumR += errorR * dt;
                 double derivativeL = (errorL - lastErrorL) / dt;
@@ -267,7 +273,7 @@ public class TestCodeV0_99 extends LinearOpMode {
                 boolean flywheelReady = Math.abs(rpmL - targetRPM) <= tolerance &&
                         Math.abs(rpmR - targetRPM) <= tolerance;
 
-                // === TELEMETRY WITH COLORS ===
+                // Telemetry
                 String statusText;
                 if (!flywheelOn) statusText = "🔴 OFF";
                 else if (flywheelReady) statusText = "🟢 READY";
@@ -304,12 +310,48 @@ public class TestCodeV0_99 extends LinearOpMode {
                 telemetry.addData("Status", "🔴 OFF");
             }
 
-            // === GENERAL TELEMETRY ===
+            // === TELEMETRY: ROBOT HEADING AND ICON ===
+            telemetry.addData("Heading (deg)", botHeadingDeg);
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
             telemetry.addData("AprilTag Detected", tagDetected);
-            telemetry.addData("Conveyor Power (B/Y/X)", conveyorPower);
-            telemetry.addData("Robot Heading (deg)", botHeadingDeg);
+            telemetry.addData("Conveyor Active (B)", conveyorOn);
+
+            // === ROBOT ICON WITH FRONT ARROW ===
+            int size = 5;
+            char[][] square = new char[size][size];
+            for (int i = 0; i < size; i++)
+                for (int j = 0; j < size; j++)
+                    square[i][j] = ' ';
+
+            // Square border
+            for (int i = 0; i < size; i++) {
+                square[0][i] = '-';
+                square[size-1][i] = '-';
+                square[i][0] = '|';
+                square[i][size-1] = '|';
+            }
+
+            int mid = size / 2;
+            double headingRad = Math.toRadians(botHeadingDeg);
+            double arrowLength = 1.5;
+
+            int arrowX = mid + (int)Math.round(Math.sin(headingRad) * arrowLength);
+            int arrowY = mid - (int)Math.round(Math.cos(headingRad) * arrowLength);
+            arrowX = Math.max(1, Math.min(size-2, arrowX));
+            arrowY = Math.max(1, Math.min(size-2, arrowY));
+            square[arrowY][arrowX] = '^';
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < size; i++) {
+                for (int j = 0; j < size; j++) {
+                    sb.append(square[i][j]);
+                }
+                sb.append('\n');
+            }
+            telemetry.addLine("=== ROBOT ICON ===");
+            telemetry.addLine(sb.toString());
+
             telemetry.update();
         }
     }
