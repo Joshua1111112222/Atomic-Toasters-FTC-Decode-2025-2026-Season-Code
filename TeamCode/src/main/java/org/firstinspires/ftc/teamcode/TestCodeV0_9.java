@@ -14,7 +14,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.CRServo;
-
+import com.qualcomm.hardware.rev.RevBlinkinLedDriver;   // ✅ NEW: LED import
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
@@ -40,8 +40,8 @@ public class TestCodeV0_9 extends LinearOpMode {
 
     // PIDF constants
     private static final double kP = 0.002;
-    private static final double kI = 0.0000009;   // small integral term
-    private static final double kD = 0.0001;      // derivative term for damping
+    private static final double kI = 0.0000009;
+    private static final double kD = 0.0001;
     private static final double kF = 0.0006;
     private static final double ticksPerRev = 28.0;
     private static final double gearRatio = 1.0;
@@ -81,6 +81,12 @@ public class TestCodeV0_9 extends LinearOpMode {
     boolean lastB = false;
     private static final double CONVEYOR_POWER = 1.0;
 
+    // --- LEDs ---
+    private RevBlinkinLedDriver ledDriver;              // ✅ NEW: LED hardware
+    private RevBlinkinLedDriver.BlinkinPattern ledPattern;
+    private double lastLedToggleTime = 0;               // for alternating pattern
+    private boolean ledToggleState = false;
+
     @Override
     public void runOpMode() throws InterruptedException {
 
@@ -115,6 +121,11 @@ public class TestCodeV0_9 extends LinearOpMode {
         conveyorLeft2 = hardwareMap.get(CRServo.class, "conveyorLeft2");
         conveyorLeft.setDirection(CRServo.Direction.REVERSE);
         conveyorLeft2.setDirection(CRServo.Direction.REVERSE);
+
+        // --- LEDs ---
+        ledDriver = hardwareMap.get(RevBlinkinLedDriver.class, "led");  // ✅ Plug into “led” port name
+        ledPattern = RevBlinkinLedDriver.BlinkinPattern.YELLOW;
+        ledDriver.setPattern(ledPattern);
 
         // --- Vision / AprilTag ---
         aprilTag = new AprilTagProcessor.Builder().build();
@@ -255,17 +266,17 @@ public class TestCodeV0_9 extends LinearOpMode {
             lastLeftBumper = leftBumper;
             lastRightBumper = rightBumper;
 
+            double rpmL = 0, rpmR = 0;
             if (flywheelOn) {
                 targetVelocity = (targetRPM / 60.0) * ticksPerRev * gearRatio;
                 double velL = flyLeft.getVelocity();
                 double velR = flyRight.getVelocity();
-                double rpmL = (velL * 60.0) / (ticksPerRev * gearRatio);
-                double rpmR = (velR * 60.0) / (ticksPerRev * gearRatio);
+                rpmL = (velL * 60.0) / (ticksPerRev * gearRatio);
+                rpmR = (velR * 60.0) / (ticksPerRev * gearRatio);
 
                 double errorL = targetVelocity - velL;
                 double errorR = targetVelocity - velR;
 
-                // PID terms
                 errorSumL += errorL * dt;
                 errorSumR += errorR * dt;
                 double derivativeL = (errorL - lastErrorL) / dt;
@@ -298,6 +309,23 @@ public class TestCodeV0_9 extends LinearOpMode {
                 lastErrorR = 0;
             }
 
+            // === LED CONTROL === ✅ NEW SECTION
+            boolean flywheelAlmostReady = (Math.abs(rpmL - targetRPM) < 300 && Math.abs(rpmR - targetRPM) < 300);
+
+            if (flywheelAlmostReady) {
+                ledPattern = RevBlinkinLedDriver.BlinkinPattern.GREEN;
+            } else {
+                // alternate every 0.3 seconds
+                if (currentTime - lastLedToggleTime > 0.3) {
+                    ledToggleState = !ledToggleState;
+                    lastLedToggleTime = currentTime;
+                }
+                ledPattern = ledToggleState
+                        ? RevBlinkinLedDriver.BlinkinPattern.BLUE
+                        : RevBlinkinLedDriver.BlinkinPattern.YELLOW;
+            }
+            ledDriver.setPattern(ledPattern);
+
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
             telemetry.addData("AprilTag Detected", tagDetected);
@@ -305,10 +333,10 @@ public class TestCodeV0_9 extends LinearOpMode {
             telemetry.addData("Flywheel On", flywheelOn);
             telemetry.addData("Flywheel Ready", flywheelReady);
 
-            // ✅ NEW: Display robot heading from IMU
             double botHeadingDeg = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
             telemetry.addData("Robot Heading (deg)", botHeadingDeg);
 
+            telemetry.addData("LED Pattern", ledPattern);
             telemetry.update();
         }
     }

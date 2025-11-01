@@ -111,6 +111,7 @@ public class TestCodeV0_99 extends LinearOpMode {
         conveyorLeft2 = hardwareMap.get(CRServo.class, "conveyorLeft2");
         conveyorLeft.setDirection(CRServo.Direction.REVERSE);
         conveyorLeft2.setDirection(CRServo.Direction.REVERSE);
+        conveyorRight.setDirection(CRServo.Direction.REVERSE);
 
         // --- Vision / AprilTag ---
         aprilTag = new AprilTagProcessor.Builder().build();
