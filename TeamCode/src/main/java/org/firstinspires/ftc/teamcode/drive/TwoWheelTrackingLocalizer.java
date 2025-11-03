@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2025 Team 21518 - The Atomic Toasters
+ * Licensed under the No Copy, No Modify License (see LICENSE-TeamAtomicToasters)
+ * You MAY NOT copy, modify, or redistribute this file without permission.
+ */
+
 package org.firstinspires.ftc.teamcode.drive;
 
 import androidx.annotation.NonNull;
@@ -12,57 +18,44 @@ import org.firstinspires.ftc.teamcode.util.Encoder;
 import java.util.Arrays;
 import java.util.List;
 
-/*
- * Sample tracking wheel localizer implementation assuming the standard configuration:
- *
- *    ^
- *    |
- *    | ( x direction)
- *    |
- *    v
- *    <----( y direction )---->
-
- *        (forward)
- *    /--------------\
- *    |     ____     |
- *    |     ----     |    <- Perpendicular Wheel
- *    |           || |
- *    |           || |    <- Parallel Wheel
- *    |              |
- *    |              |
- *    \--------------/
- *
+/**
+ * Custom two-wheel tracking localizer for Team 21518.
+ * Uses front left and front right motors as encoders for X and Y movement.
  */
 public class TwoWheelTrackingLocalizer extends TwoTrackingWheelLocalizer {
-    public static double TICKS_PER_REV = 538;
-    public static double WHEEL_RADIUS = 2; // in
-    public static double GEAR_RATIO = 1; // output (wheel) speed / input (encoder) speed
+    public static double TICKS_PER_REV = 538.0; // goBILDA 312 RPM or similar
+    public static double WHEEL_RADIUS = 2.0; // in
+    public static double GEAR_RATIO = 1.0;   // output (wheel) speed / input (encoder) speed
 
-    public static double PARALLEL_X = 0; // X is the up and down direction
-    public static double PARALLEL_Y = 0; // Y is the strafe direction
+    // Position of tracking wheels relative to robot center (in inches)
+    public static double PARALLEL_X = 0; // forward offset
+    public static double PARALLEL_Y = 0; // lateral offset
 
     public static double PERPENDICULAR_X = 0;
     public static double PERPENDICULAR_Y = 0;
 
-    // Parallel/Perpendicular to the forward axis
-    // Parallel wheel is parallel to the forward axis
-    // Perpendicular is perpendicular to the forward axis
-    private Encoder parallelEncoder, perpendicularEncoder;
-
-    private SampleMecanumDrive drive;
+    // Encoders
+    private final Encoder parallelEncoder;       // X-axis movement (forward/back)
+    private final Encoder perpendicularEncoder;  // Y-axis movement (strafe)
+    private final SampleMecanumDrive drive;
 
     public TwoWheelTrackingLocalizer(HardwareMap hardwareMap, SampleMecanumDrive drive) {
         super(Arrays.asList(
-            new Pose2d(PARALLEL_X, PARALLEL_Y, 0),
-            new Pose2d(PERPENDICULAR_X, PERPENDICULAR_Y, Math.toRadians(90))
+                // parallel encoder (forward)
+                new Pose2d(PARALLEL_X, PARALLEL_Y, 0),
+                // perpendicular encoder (strafe)
+                new Pose2d(PERPENDICULAR_X, PERPENDICULAR_Y, Math.toRadians(90))
         ));
 
         this.drive = drive;
 
-        parallelEncoder = new Encoder(hardwareMap.get(DcMotorEx.class, "parallelEncoder"));
-        perpendicularEncoder = new Encoder(hardwareMap.get(DcMotorEx.class, "perpendicularEncoder"));
+        // Use your drive motors as encoders
+        parallelEncoder = new Encoder(hardwareMap.get(DcMotorEx.class, "motorFrontLeft"));
+        perpendicularEncoder = new Encoder(hardwareMap.get(DcMotorEx.class, "motorFrontRight"));
 
-        // TODO: reverse any encoders using Encoder.setDirection(Encoder.Direction.REVERSE)
+        // Reverse directions to match encoder readings from AutonPather
+        parallelEncoder.setDirection(Encoder.Direction.REVERSE);
+        perpendicularEncoder.setDirection(Encoder.Direction.REVERSE);
     }
 
     public static double encoderTicksToInches(double ticks) {
@@ -91,13 +84,9 @@ public class TwoWheelTrackingLocalizer extends TwoTrackingWheelLocalizer {
     @NonNull
     @Override
     public List<Double> getWheelVelocities() {
-        // TODO: If your encoder velocity can exceed 32767 counts / second (such as the REV Through Bore and other
-        //  competing magnetic encoders), change Encoder.getRawVelocity() to Encoder.getCorrectedVelocity() to enable a
-        //  compensation method
-
         return Arrays.asList(
-                encoderTicksToInches(parallelEncoder.getRawVelocity()),
-                encoderTicksToInches(perpendicularEncoder.getRawVelocity())
+                encoderTicksToInches(parallelEncoder.getCorrectedVelocity()),
+                encoderTicksToInches(perpendicularEncoder.getCorrectedVelocity())
         );
     }
 }
