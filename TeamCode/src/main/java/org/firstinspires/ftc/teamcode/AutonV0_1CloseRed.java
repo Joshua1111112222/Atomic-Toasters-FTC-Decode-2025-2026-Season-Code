@@ -6,13 +6,17 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import com.acmerobotics.roadrunner.geometry.Pose2d;
+import com.acmerobotics.roadrunner.trajectory.Trajectory;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 
-@Autonomous(name = "AutonV0_1CloseRed", group = "Main")
+import org.firstinspires.ftc.teamcode.drive.SampleMecanumDrive;
+
+@Autonomous(name = "AutonV0_1CloseRedRR", group = "Main")
 public class AutonV0_1CloseRed extends LinearOpMode {
 
     // --- Flywheels ---
@@ -26,13 +30,13 @@ public class AutonV0_1CloseRed extends LinearOpMode {
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
     DcMotor intakeMotor;
 
-    // --- Drive Motors ---
-    DcMotor motorFrontLeft, motorFrontRight, motorBackLeft, motorBackRight;
+    // --- Road Runner Drive ---
+    private SampleMecanumDrive drive;
 
     // --- Constants ---
-    private static final double TARGET_RPM = 2300;
+    private static final double TARGET_RPM = 2400;
     private static final double RPM_TOLERANCE = 200;    // ±200 RPM window
-    private static final double MIN_RPM_DROP = 100;     // detect ball shot
+    private static final double MIN_RPM_DROP = 200;     // detect ball shot
     private static final double CONVEYOR_POWER = 1.0;
     private static final double INTAKE_POWER = 1.0;
 
@@ -61,46 +65,29 @@ public class AutonV0_1CloseRed extends LinearOpMode {
         intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         intakeMotor.setDirection(DcMotor.Direction.REVERSE);
 
-        motorFrontLeft = hardwareMap.get(DcMotor.class, "motorFrontLeft");
-        motorFrontRight = hardwareMap.get(DcMotor.class, "motorFrontRight");
-        motorBackLeft = hardwareMap.get(DcMotor.class, "motorBackLeft");
-        motorBackRight = hardwareMap.get(DcMotor.class, "motorBackRight");
-
-        motorFrontLeft.setDirection(DcMotor.Direction.REVERSE);
-        motorBackLeft.setDirection(DcMotor.Direction.REVERSE);
+        // --- Road Runner drive ---
+        drive = new SampleMecanumDrive(hardwareMap);
 
         telemetry.addLine("Initialized. Ready to run Auto BackUp + Shoot + Strafe Right.");
         telemetry.update();
 
         waitForStart();
 
-        double targetVelocity = (TARGET_RPM / 60.0) * ticksPerRev * gearRatio;
-
-        // --- Backup using straight motor power ---
-        telemetry.addLine("Backing up for 1.5 seconds...");
-        telemetry.update();
-
-        double basePower = -0.5;
-        motorFrontLeft.setPower(basePower);
-        motorFrontRight.setPower(basePower);
-        motorBackLeft.setPower(basePower);
-        motorBackRight.setPower(basePower);
-        sleep(1500); // backup duration (milliseconds)
-
-        // Stop drive motors
-        motorFrontLeft.setPower(0);
-        motorFrontRight.setPower(0);
-        motorBackLeft.setPower(0);
-        motorBackRight.setPower(0);
+        // --- BACKUP using Road Runner ---
+        Trajectory backupTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
+                .back(80) // Move backward ~80 inches
+                .build();
+        drive.followTrajectory(backupTrajectory);
 
         telemetry.addLine("✅ Backup complete. Starting shooting sequence...");
         telemetry.update();
+
+        double targetVelocity = (TARGET_RPM / 60.0) * ticksPerRev * gearRatio;
 
         // --- Shooting phase with timeout ---
         shotsFired = 0;
         feeding = false;
         lastAvgRPM = 0;
-
         long lastShotTime = System.currentTimeMillis();
         long TIMEOUT_MS = 10000; // 10 seconds timeout
 
@@ -167,18 +154,11 @@ public class AutonV0_1CloseRed extends LinearOpMode {
         conveyorLeft2.setPower(0);
         intakeMotor.setPower(0);
 
-        // --- Strafe right (mecanum) ---
-        motorFrontLeft.setPower(0.5);
-        motorFrontRight.setPower(-0.5);
-        motorBackLeft.setPower(-0.5);
-        motorBackRight.setPower(0.5);
-        sleep(1000);
-
-        // Stop after strafing
-        motorFrontLeft.setPower(0);
-        motorFrontRight.setPower(0);
-        motorBackLeft.setPower(0);
-        motorBackRight.setPower(0);
+        // --- Strafe right using Road Runner ---
+        Trajectory strafeTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
+                .strafeRight(20) // adjust distance if needed
+                .build();
+        drive.followTrajectory(strafeTrajectory);
 
         telemetry.addLine("✅ Finished Strafe Right!");
         telemetry.update();

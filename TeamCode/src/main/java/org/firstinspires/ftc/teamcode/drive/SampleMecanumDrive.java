@@ -124,6 +124,10 @@ public class SampleMecanumDrive extends MecanumDrive {
         rightFront.setDirection(DcMotor.Direction.FORWARD);
         rightRear.setDirection(DcMotor.Direction.FORWARD);
 
+        // --- Two-wheel tracking localizer ---
+        TwoWheelTrackingLocalizer localizer = new TwoWheelTrackingLocalizer(hardwareMap, this);
+        setLocalizer(localizer);
+
         List<Integer> lastTrackingEncPositions = new ArrayList<>();
         List<Integer> lastTrackingEncVels = new ArrayList<>();
 
