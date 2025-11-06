@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2025 Team 21518 - The Atomic Toasters
+ * Licensed under the No Copy, No Modify License (see LICENSE-TeamAtomicToasters)
+ * You MAY NOT copy, modify, or redistribute this file without permission.
+ */
+
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -62,12 +68,11 @@ public class TestCodeV0_99 extends LinearOpMode {
     boolean lastDpadUp = false;
     boolean lastDpadDown = false;
 
-    // Auto-align tuning
-    private static final double ROT_KP = 0.015;
-    private static final double X_KP = 0.1;
+    // Auto-align tuning (TURN ONLY)
+    private static final double ROT_KP = 0.02;
     private static final double ROT_MAX = 0.4;
-    private static final double ROT_DEADZONE = 1.0;
-    private static final double X_DEADZONE = 0.03;
+    private static final double ROT_DEADZONE = 2.0; // widened for stability
+    private static final double MIN_TURN_POWER = 0.15;
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
@@ -158,7 +163,7 @@ public class TestCodeV0_99 extends LinearOpMode {
             double rotatedX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
             double rotatedY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
 
-            // === APRILTAG AUTO ALIGN ===
+            // === APRILTAG AUTO ALIGN (UPDATED) ===
             List<AprilTagDetection> detections = aprilTag.getDetections();
             boolean tagDetected = !detections.isEmpty();
 
@@ -169,16 +174,30 @@ public class TestCodeV0_99 extends LinearOpMode {
             if (autoAim && cameraEnabled && tagDetected) {
                 AprilTagDetection tag = detections.get(0);
                 if (tag.ftcPose != null) {
-                    double yawToFaceTag = tag.ftcPose.bearing;
-                    double strafeError = tag.ftcPose.x;
-                    double rotPower = yawToFaceTag * ROT_KP;
+                    double yawError = tag.ftcPose.bearing; // positive = tag is right of center
+
+                    // if tag is to the right, turn right (negative rx = clockwise)
+                    double rotPower = -yawError * ROT_KP;
+
+                    // clamp
                     rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
-                    double strafePower = -strafeError * X_KP;
-                    if (Math.abs(yawToFaceTag) < ROT_DEADZONE) rotPower = 0;
-                    if (Math.abs(strafeError) < X_DEADZONE) strafePower = 0;
+
+                    // deadzone
+                    if (Math.abs(yawError) < ROT_DEADZONE) rotPower = 0;
+
+                    // min power if not zero
+                    if (rotPower != 0) {
+                        rotPower = Math.copySign(Math.max(Math.abs(rotPower), MIN_TURN_POWER), rotPower);
+                    }
+
+                    // stop translation while aligning
+                    rotatedX = 0;
+                    rotatedY = 0;
+
                     rx = rotPower;
-                    rotatedX = strafePower;
-                    rotatedY = 0.0;
+
+                    telemetry.addData("AutoAlign Yaw Error", yawError);
+                    telemetry.addData("AutoAlign Turn Power", rotPower);
                 }
             }
 
@@ -311,47 +330,12 @@ public class TestCodeV0_99 extends LinearOpMode {
                 telemetry.addData("Status", "🔴 OFF");
             }
 
-            // === TELEMETRY: ROBOT HEADING AND ICON ===
+            // === TELEMETRY: ROBOT HEADING, AUTOALIGN, CAMERA, APRILTAG, CONVEYOR ===
             telemetry.addData("Heading (deg)", botHeadingDeg);
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
             telemetry.addData("AprilTag Detected", tagDetected);
             telemetry.addData("Conveyor Active (B)", conveyorOn);
-
-            // === ROBOT ICON WITH FRONT ARROW ===
-            int size = 5;
-            char[][] square = new char[size][size];
-            for (int i = 0; i < size; i++)
-                for (int j = 0; j < size; j++)
-                    square[i][j] = ' ';
-
-            // Square border
-            for (int i = 0; i < size; i++) {
-                square[0][i] = '-';
-                square[size-1][i] = '-';
-                square[i][0] = '|';
-                square[i][size-1] = '|';
-            }
-
-            int mid = size / 2;
-            double headingRad = Math.toRadians(botHeadingDeg);
-            double arrowLength = 1.5;
-
-            int arrowX = mid + (int)Math.round(Math.sin(headingRad) * arrowLength);
-            int arrowY = mid - (int)Math.round(Math.cos(headingRad) * arrowLength);
-            arrowX = Math.max(1, Math.min(size-2, arrowX));
-            arrowY = Math.max(1, Math.min(size-2, arrowY));
-            square[arrowY][arrowX] = '^';
-
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < size; i++) {
-                for (int j = 0; j < size; j++) {
-                    sb.append(square[i][j]);
-                }
-                sb.append('\n');
-            }
-            telemetry.addLine("=== ROBOT ICON ===");
-            telemetry.addLine(sb.toString());
 
             telemetry.update();
         }
