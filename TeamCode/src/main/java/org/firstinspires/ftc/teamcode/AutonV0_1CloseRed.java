@@ -156,12 +156,12 @@ public class AutonV0_1CloseRed extends LinearOpMode {
 
         // --- Strafe right using Road Runner ---
         Trajectory strafeTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
-                .strafeRight(20) // adjust distance if needed
+                .strafeRight(30) // adjust distance if needed
                 .build();
         drive.followTrajectory(strafeTrajectory);
 
         telemetry.addLine("✅ Finished Strafe Right!");
         telemetry.update();
-        sleep(500);
+        sleep(700);
     }
 }

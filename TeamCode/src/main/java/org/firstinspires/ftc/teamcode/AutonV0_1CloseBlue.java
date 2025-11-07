@@ -157,13 +157,13 @@ public class AutonV0_1CloseBlue extends LinearOpMode {
 
         // --- Strafe left (mecanum) using Road Runner ---
         Trajectory strafeTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
-                .strafeLeft(20) // adjust distance if needed
+                .strafeLeft(30) // adjust distance if needed
                 .build();
 
         drive.followTrajectory(strafeTrajectory);
 
         telemetry.addLine("✅ Finished Strafe Left!");
         telemetry.update();
-        sleep(500);
+        sleep(700);
     }
 }
