@@ -12,6 +12,14 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagPoseFtc;
+import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+
+import java.util.List;
+
 @Autonomous(name = "AutonV0_1Far", group = "Main")
 public class AutonV0_1Far extends LinearOpMode {
 
@@ -42,6 +50,16 @@ public class AutonV0_1Far extends LinearOpMode {
     private boolean feeding = false;
     private double lastAvgRPM = 0;
 
+    // --- Auto-align constants ---
+    private static final double ROT_KP = 0.02;
+    private static final double ROT_MAX = 0.4;
+    private static final double ROT_DEADZONE = 2.0; // degrees
+    private static final double MIN_TURN_POWER = 0.15;
+
+    // --- Vision ---
+    private VisionPortal visionPortal;
+    private AprilTagProcessor aprilTag;
+
     @Override
     public void runOpMode() throws InterruptedException {
 
@@ -69,10 +87,59 @@ public class AutonV0_1Far extends LinearOpMode {
         motorFrontLeft.setDirection(DcMotor.Direction.REVERSE);
         motorBackLeft.setDirection(DcMotor.Direction.REVERSE);
 
-        telemetry.addLine("Initialized. Ready to run Auto Shooting (2 shots).");
+        // --- Vision / AprilTag ---
+        aprilTag = new AprilTagProcessor.Builder().build();
+        visionPortal = new VisionPortal.Builder()
+                .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                .addProcessor(aprilTag)
+                .enableLiveView(true)
+                .setStreamFormat(VisionPortal.StreamFormat.MJPEG)
+                .build();
+
+        telemetry.addLine("Initialized. Ready to run Auto Align + Shoot + Drive Forward.");
         telemetry.update();
 
         waitForStart();
+
+        // --- AUTO-ALIGN to AprilTag ---
+        boolean aligned = false;
+        while (opModeIsActive() && !aligned) {
+            List<AprilTagDetection> detections = aprilTag.getDetections();
+            if (!detections.isEmpty() && detections.get(0).ftcPose != null) {
+                AprilTagPoseFtc tagPose = detections.get(0).ftcPose;
+                double yawError = tagPose.bearing; // + = tag right of center
+                double rotPower = -yawError * ROT_KP;
+
+                // clamp
+                rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
+
+                // deadzone
+                if (Math.abs(yawError) < ROT_DEADZONE) {
+                    rotPower = 0;
+                    aligned = true;
+                } else if (rotPower != 0) {
+                    rotPower = Math.copySign(Math.max(Math.abs(rotPower), MIN_TURN_POWER), rotPower);
+                }
+
+                // rotate in place
+                motorFrontLeft.setPower(rotPower);
+                motorBackLeft.setPower(rotPower);
+                motorFrontRight.setPower(-rotPower);
+                motorBackRight.setPower(-rotPower);
+
+                telemetry.addData("AutoAlign Yaw Error", yawError);
+                telemetry.addData("Rot Power", rotPower);
+                telemetry.update();
+            }
+        }
+
+        // Stop motors once aligned
+        motorFrontLeft.setPower(0);
+        motorFrontRight.setPower(0);
+        motorBackLeft.setPower(0);
+        motorBackRight.setPower(0);
+        telemetry.addLine("✅ Aligned to AprilTag. Starting shooting sequence...");
+        telemetry.update();
 
         double targetVelocity = (TARGET_RPM / 60.0) * ticksPerRev * gearRatio;
 
@@ -81,8 +148,7 @@ public class AutonV0_1Far extends LinearOpMode {
         feeding = false;
         lastAvgRPM = 0;
 
-        long startTime = System.currentTimeMillis();
-        long lastShotTime = startTime;
+        long lastShotTime = System.currentTimeMillis();
         long TIMEOUT_MS = 10000; // 10 seconds timeout
 
         while (opModeIsActive() && shotsFired < MAX_SHOTS) {
