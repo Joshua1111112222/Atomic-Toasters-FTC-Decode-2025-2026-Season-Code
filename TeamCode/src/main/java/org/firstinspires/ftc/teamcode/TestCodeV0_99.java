@@ -299,10 +299,24 @@ public class TestCodeV0_99 extends LinearOpMode {
             }
 
             // === LED LOGIC USING REV BLINKIN ===
-            if (flywheelOn && flywheelReady) {
+            boolean autoAlignedNow = false;
+            if (autoAim && cameraEnabled && !detections.isEmpty() && detections.get(0).ftcPose != null) {
+                double yawErr = detections.get(0).ftcPose.bearing;
+                autoAlignedNow = Math.abs(yawErr) < ROT_DEADZONE;
+            }
+
+            if (flywheelReady && autoAlignedNow) {
+                // Both ready → solid green
                 blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
+            } else if ((flywheelReady && !autoAlignedNow) || (!flywheelReady && autoAlignedNow)) {
+                // One ready → rapid flash green
+                if ((int)(currentTime * 10) % 2 == 0) {
+                    blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
+                } else {
+                    blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
+                }
             } else {
-                // Flash blue and yellow
+                // Everything else → blue/yellow flash
                 if ((int)(currentTime * 2) % 2 == 0) {
                     blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
                 } else {
@@ -314,10 +328,12 @@ public class TestCodeV0_99 extends LinearOpMode {
             telemetry.addData("Heading (deg)", botHeadingDeg);
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
-            telemetry.addData("AprilTag Detected", !detections.isEmpty());
+            telemetry.addData("AprilTag Detected", tagDetected);
             telemetry.addData("Conveyor Active (B)", conveyorOn);
             telemetry.addData("Flywheel Ready", flywheelReady);
             telemetry.update();
         }
     }
+
+
 }
