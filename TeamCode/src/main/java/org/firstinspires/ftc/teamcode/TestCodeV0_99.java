@@ -15,6 +15,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.CRServo;
 
+import com.qualcomm.hardware.rev.RevBlinkinLedDriver;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
@@ -39,14 +40,14 @@ public class TestCodeV0_99 extends LinearOpMode {
 
     // PIDF constants
     private static final double kP = 0.002;
-    private static final double kI = 0.0000009;   // small integral term
-    private static final double kD = 0.0001;      // derivative term for damping
+    private static final double kI = 0.0000009;
+    private static final double kD = 0.0001;
     private static final double kF = 0.0006;
     private static final double ticksPerRev = 28.0;
     private static final double gearRatio = 1.0;
     private static final double closeRPM = 2300;
     private static final double farRPM = 2500;
-    private static final double tolerance = 250; // ±250 RPM for "ready"
+    private static final double tolerance = 250;
 
     private double targetRPM = 0;
     private double targetVelocity = 0;
@@ -71,13 +72,16 @@ public class TestCodeV0_99 extends LinearOpMode {
     // Auto-align tuning (TURN ONLY)
     private static final double ROT_KP = 0.02;
     private static final double ROT_MAX = 0.4;
-    private static final double ROT_DEADZONE = 2.0; // widened for stability
+    private static final double ROT_DEADZONE = 2.0;
     private static final double MIN_TURN_POWER = 0.15;
 
     // --- Conveyor ---
     CRServo conveyorLeft, conveyorRight, conveyorLeft2;
     boolean conveyorOn = false;
     private static final double CONVEYOR_POWER = 1.0;
+
+    // --- LEDs ---
+    RevBlinkinLedDriver blinkin;
 
     // IMU reset offset
     double imuOffset = 0;
@@ -117,6 +121,9 @@ public class TestCodeV0_99 extends LinearOpMode {
         conveyorLeft.setDirection(CRServo.Direction.REVERSE);
         conveyorLeft2.setDirection(CRServo.Direction.REVERSE);
         conveyorRight.setDirection(CRServo.Direction.REVERSE);
+
+        // --- LEDs ---
+        blinkin = hardwareMap.get(RevBlinkinLedDriver.class, "blinkin");
 
         // --- Vision / AprilTag ---
         aprilTag = new AprilTagProcessor.Builder().build();
@@ -163,7 +170,7 @@ public class TestCodeV0_99 extends LinearOpMode {
             double rotatedX = x * Math.cos(-botHeading) - y * Math.sin(-botHeading);
             double rotatedY = x * Math.sin(-botHeading) + y * Math.cos(-botHeading);
 
-            // === APRILTAG AUTO ALIGN (UPDATED) ===
+            // === APRILTAG AUTO ALIGN ===
             List<AprilTagDetection> detections = aprilTag.getDetections();
             boolean tagDetected = !detections.isEmpty();
 
@@ -174,26 +181,14 @@ public class TestCodeV0_99 extends LinearOpMode {
             if (autoAim && cameraEnabled && tagDetected) {
                 AprilTagDetection tag = detections.get(0);
                 if (tag.ftcPose != null) {
-                    double yawError = tag.ftcPose.bearing; // positive = tag is right of center
-
-                    // if tag is to the right, turn right (negative rx = clockwise)
+                    double yawError = tag.ftcPose.bearing;
                     double rotPower = -yawError * ROT_KP;
-
-                    // clamp
                     rotPower = Math.max(-ROT_MAX, Math.min(ROT_MAX, rotPower));
-
-                    // deadzone
                     if (Math.abs(yawError) < ROT_DEADZONE) rotPower = 0;
+                    if (rotPower != 0) rotPower = Math.copySign(Math.max(Math.abs(rotPower), MIN_TURN_POWER), rotPower);
 
-                    // min power if not zero
-                    if (rotPower != 0) {
-                        rotPower = Math.copySign(Math.max(Math.abs(rotPower), MIN_TURN_POWER), rotPower);
-                    }
-
-                    // stop translation while aligning
                     rotatedX = 0;
                     rotatedY = 0;
-
                     rx = rotPower;
 
                     telemetry.addData("AutoAlign Yaw Error", yawError);
@@ -201,7 +196,7 @@ public class TestCodeV0_99 extends LinearOpMode {
                 }
             }
 
-            // === CONVEYOR CONTROL === (Hold to run)
+            // === CONVEYOR CONTROL ===
             boolean bPressed = gamepad1.b || gamepad2.b;
             conveyorOn = bPressed;
 
@@ -267,6 +262,8 @@ public class TestCodeV0_99 extends LinearOpMode {
             lastLeftBumper = leftBumper;
             lastRightBumper = rightBumper;
 
+            boolean flywheelReady = false;
+
             if (flywheelOn) {
                 targetVelocity = (targetRPM / 60.0) * ticksPerRev * gearRatio;
                 double velL = flyLeft.getVelocity();
@@ -290,28 +287,8 @@ public class TestCodeV0_99 extends LinearOpMode {
                 flyLeft.setPower(powerL);
                 flyRight.setPower(powerR);
 
-                boolean flywheelReady = Math.abs(rpmL - targetRPM) <= tolerance &&
+                flywheelReady = Math.abs(rpmL - targetRPM) <= tolerance &&
                         Math.abs(rpmR - targetRPM) <= tolerance;
-
-                // Telemetry
-                String statusText;
-                if (!flywheelOn) statusText = "🔴 OFF";
-                else if (flywheelReady) statusText = "🟢 READY";
-                else statusText = "🟡 SPINNING UP";
-
-                String rpmLText = String.format("%s %.1f", flywheelReady ? "🟢" : "🟡", rpmL);
-                String rpmRText = String.format("%s %.1f", flywheelReady ? "🟢" : "🟡", rpmR);
-                String powerLText = String.format("%.3f", powerL);
-                String powerRText = String.format("%.3f", powerR);
-
-                telemetry.addLine("=== FLYWHEEL STATUS ===");
-                telemetry.addData("Mode", targetRPM == closeRPM ? "CLOSE (2500)" : "FAR (2700)");
-                telemetry.addData("Target RPM", targetRPM);
-                telemetry.addData("L RPM", rpmLText);
-                telemetry.addData("R RPM", rpmRText);
-                telemetry.addData("Power L", powerLText);
-                telemetry.addData("Power R", powerRText);
-                telemetry.addData("Status", statusText);
             } else {
                 flyLeft.setPower(0);
                 flyRight.setPower(0);
@@ -319,24 +296,27 @@ public class TestCodeV0_99 extends LinearOpMode {
                 errorSumR = 0;
                 lastErrorL = 0;
                 lastErrorR = 0;
-
-                telemetry.addLine("=== FLYWHEEL STATUS ===");
-                telemetry.addData("Mode", "OFF");
-                telemetry.addData("Target RPM", 0);
-                telemetry.addData("L RPM", "🔴 0");
-                telemetry.addData("R RPM", "🔴 0");
-                telemetry.addData("Power L", "0.000");
-                telemetry.addData("Power R", "0.000");
-                telemetry.addData("Status", "🔴 OFF");
             }
 
-            // === TELEMETRY: ROBOT HEADING, AUTOALIGN, CAMERA, APRILTAG, CONVEYOR ===
+            // === LED LOGIC USING REV BLINKIN ===
+            if (flywheelOn && flywheelReady) {
+                blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
+            } else {
+                // Flash blue and yellow
+                if ((int)(currentTime * 2) % 2 == 0) {
+                    blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLUE);
+                } else {
+                    blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.YELLOW);
+                }
+            }
+
+            // === TELEMETRY ===
             telemetry.addData("Heading (deg)", botHeadingDeg);
             telemetry.addData("AutoAlign Active", autoAim);
             telemetry.addData("Camera Enabled", cameraEnabled);
-            telemetry.addData("AprilTag Detected", tagDetected);
+            telemetry.addData("AprilTag Detected", !detections.isEmpty());
             telemetry.addData("Conveyor Active (B)", conveyorOn);
-
+            telemetry.addData("Flywheel Ready", flywheelReady);
             telemetry.update();
         }
     }

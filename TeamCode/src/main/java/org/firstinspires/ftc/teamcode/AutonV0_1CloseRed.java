@@ -6,6 +6,10 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
+import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
+import com.acmerobotics.dashboard.canvas.Canvas;
 import com.acmerobotics.roadrunner.geometry.Pose2d;
 import com.acmerobotics.roadrunner.trajectory.Trajectory;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
@@ -33,10 +37,13 @@ public class AutonV0_1CloseRed extends LinearOpMode {
     // --- Road Runner Drive ---
     private SampleMecanumDrive drive;
 
+    // --- Dashboard ---
+    private FtcDashboard dashboard;
+
     // --- Constants ---
     private static final double TARGET_RPM = 2400;
-    private static final double RPM_TOLERANCE = 200;    // ±200 RPM window
-    private static final double MIN_RPM_DROP = 200;     // detect ball shot
+    private static final double RPM_TOLERANCE = 200;
+    private static final double MIN_RPM_DROP = 200;
     private static final double CONVEYOR_POWER = 1.0;
     private static final double INTAKE_POWER = 1.0;
 
@@ -68,32 +75,46 @@ public class AutonV0_1CloseRed extends LinearOpMode {
         // --- Road Runner drive ---
         drive = new SampleMecanumDrive(hardwareMap);
 
+        // --- Setup Dashboard ---
+        dashboard = FtcDashboard.getInstance();
+        telemetry = new MultipleTelemetry(telemetry, dashboard.getTelemetry());
+
         telemetry.addLine("Initialized. Ready to run Auto BackUp + Shoot + Strafe Right.");
         telemetry.update();
 
         waitForStart();
+        if (isStopRequested()) return;
 
-        // --- BACKUP using Road Runner ---
-        Trajectory backupTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
-                .back(80) // Move backward ~80 inches
+        // --- Starting Pose ---
+        Pose2d startPose = new Pose2d(0, 0, 0);
+        drive.setPoseEstimate(startPose);
+
+        // --- BACKUP trajectory ---
+        Trajectory backupTrajectory = drive.trajectoryBuilder(startPose)
+                .back(80)
                 .build();
+
+        // --- STRAFE trajectory (Right) ---
+        Trajectory strafeTrajectory = drive.trajectoryBuilder(backupTrajectory.end())
+                .strafeRight(80)
+                .build();
+
+        telemetry.addLine("🚀 Following backup trajectory...");
+        telemetry.update();
         drive.followTrajectory(backupTrajectory);
 
         telemetry.addLine("✅ Backup complete. Starting shooting sequence...");
         telemetry.update();
 
         double targetVelocity = (TARGET_RPM / 60.0) * ticksPerRev * gearRatio;
-
-        // --- Shooting phase with timeout ---
         shotsFired = 0;
         feeding = false;
         lastAvgRPM = 0;
         long lastShotTime = System.currentTimeMillis();
-        long TIMEOUT_MS = 10000; // 10 seconds timeout
+        long TIMEOUT_MS = 10000;
 
+        // --- Shooting loop ---
         while (opModeIsActive() && shotsFired < MAX_SHOTS) {
-
-            // --- Flywheel control ---
             double velL = flyLeft.getVelocity();
             double velR = flyRight.getVelocity();
             double rpmL = (velL * 60.0) / (ticksPerRev * gearRatio);
@@ -109,7 +130,7 @@ public class AutonV0_1CloseRed extends LinearOpMode {
             flyLeft.setPower(powerL);
             flyRight.setPower(powerR);
 
-            // --- Start feeding once flywheel stable ---
+            // Feed control
             if (!feeding && Math.abs(avgRPM - TARGET_RPM) <= RPM_TOLERANCE) {
                 feeding = true;
                 conveyorLeft.setPower(CONVEYOR_POWER);
@@ -118,20 +139,16 @@ public class AutonV0_1CloseRed extends LinearOpMode {
                 intakeMotor.setPower(INTAKE_POWER);
             }
 
-            // --- Detect shot using delta RPM ---
             if (feeding && lastAvgRPM - avgRPM > MIN_RPM_DROP) {
                 shotsFired++;
                 feeding = false;
                 lastShotTime = System.currentTimeMillis();
-
-                // Stop conveyors and intake
                 conveyorLeft.setPower(0);
                 conveyorRight.setPower(0);
                 conveyorLeft2.setPower(0);
                 intakeMotor.setPower(0);
             }
 
-            // --- Timeout: if no shot in last 10 sec, break ---
             if (System.currentTimeMillis() - lastShotTime > TIMEOUT_MS) {
                 telemetry.addLine("⚠️ Timeout reached. Moving to strafe.");
                 telemetry.update();
@@ -140,13 +157,35 @@ public class AutonV0_1CloseRed extends LinearOpMode {
 
             lastAvgRPM = avgRPM;
 
+            // --- Update drive for live dashboard pose ---
+            drive.update();
+            Pose2d pose = drive.getPoseEstimate();
+
+            // Send live robot pose to dashboard field
+            TelemetryPacket packet = new TelemetryPacket();
+            Canvas field = packet.fieldOverlay();
+
+            // Draw robot
+            field.setStroke("#F44336"); // Red color
+            field.strokeCircle(pose.getX(), pose.getY(), 9); // robot radius ~9 in
+            field.strokeLine(
+                    pose.getX(),
+                    pose.getY(),
+                    pose.getX() + 9 * Math.cos(pose.getHeading()),
+                    pose.getY() + 9 * Math.sin(pose.getHeading())
+            );
+            dashboard.sendTelemetryPacket(packet);
+
             telemetry.addData("Flywheel Avg RPM", avgRPM);
             telemetry.addData("Shots Fired", shotsFired);
             telemetry.addData("Feeding", feeding);
+            telemetry.addData("X", pose.getX());
+            telemetry.addData("Y", pose.getY());
+            telemetry.addData("Heading (deg)", Math.toDegrees(pose.getHeading()));
             telemetry.update();
         }
 
-        // Stop flywheels and intake after shooting or timeout
+        // Stop everything
         flyLeft.setPower(0);
         flyRight.setPower(0);
         conveyorLeft.setPower(0);
@@ -154,14 +193,27 @@ public class AutonV0_1CloseRed extends LinearOpMode {
         conveyorLeft2.setPower(0);
         intakeMotor.setPower(0);
 
-        // --- Strafe right using Road Runner ---
-        Trajectory strafeTrajectory = drive.trajectoryBuilder(drive.getPoseEstimate())
-                .strafeRight(30) // adjust distance if needed
-                .build();
+        // --- Strafe trajectory follow ---
+        telemetry.addLine("🚗 Strafing right...");
+        telemetry.update();
         drive.followTrajectory(strafeTrajectory);
 
+        drive.update();
+        Pose2d finalPose = drive.getPoseEstimate();
+
+        // Send final pose to dashboard
+        TelemetryPacket finalPacket = new TelemetryPacket();
+        Canvas finalField = finalPacket.fieldOverlay();
+        finalField.setStroke("#00FF00");
+        finalField.strokeCircle(finalPose.getX(), finalPose.getY(), 9);
+        dashboard.sendTelemetryPacket(finalPacket);
+
         telemetry.addLine("✅ Finished Strafe Right!");
+        telemetry.addData("Final X", finalPose.getX());
+        telemetry.addData("Final Y", finalPose.getY());
+        telemetry.addData("Final Heading (deg)", Math.toDegrees(finalPose.getHeading()));
         telemetry.update();
-        sleep(700);
+
+        sleep(5000);
     }
 }
