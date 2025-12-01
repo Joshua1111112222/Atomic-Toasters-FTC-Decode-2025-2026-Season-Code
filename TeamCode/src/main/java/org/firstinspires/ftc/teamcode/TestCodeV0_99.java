@@ -311,7 +311,7 @@ public class TestCodeV0_99 extends LinearOpMode {
                 blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
             } else if ((flywheelReady && !autoAlignedNow) || (!flywheelReady && autoAlignedNow)) {
                 // One ready → rapid flash green
-                if ((int)(currentTime * 12) % 2 == 0) {
+                if ((int)(currentTime * 10) % 2 == 0) {
                     blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
                 } else {
                     blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
